@@ -57,14 +57,14 @@ type initLoadResult struct {
 }
 
 type room struct {
-	N string
-	M map[string]int
+	Name    string         `json:"n"`
+	Members map[string]int `json:m`
 }
 
 type contact struct {
-	Aid int
-	Nm  string
-	Rid int
+	AccountId int    `json:"aid"`
+	Name      string `json:"nm"`
+	RoomId    int    `json:"rid"`
 }
 
 func initLoad() {
@@ -77,8 +77,8 @@ func initLoad() {
 	contacts = result.Result.Contacts
 }
 
-type pdata struct {
-	Aid            []int `json:"aid"`
+type privateData struct {
+	AccountIds     []int `json:"aid"`
 	GetPrivateData int   `json:"get_private_data"`
 }
 
@@ -90,33 +90,31 @@ type getAccountInfoResult struct {
 
 func getAccountInfo() {
 	aidMap := map[int]bool{}
-	for _, v := range rooms {
-		for k, _ := range v.M {
-			aid, _ := strconv.Atoi(k)
+	for _, room := range rooms {
+		for aidStr, _ := range room.Members {
+			aid, _ := strconv.Atoi(aidStr)
 			aidMap[aid] = true
 		}
 	}
-	for _, v := range contacts {
-		delete(aidMap, v.Aid)
+	for _, contact := range contacts {
+		delete(aidMap, contact.AccountId)
 	}
 	aidSet := []int{}
-	for k, _ := range aidMap {
-		aidSet = append(aidSet, k)
+	for aid, _ := range aidMap {
+		aidSet = append(aidSet, aid)
 	}
 	sort.Sort(sort.IntSlice(aidSet))
-	pdata, _ := json.Marshal(pdata{
-		Aid:            aidSet,
+	pdata, _ := json.Marshal(privateData{
+		AccountIds:     aidSet,
 		GetPrivateData: 0,
 	})
-	resp, _ := client.PostForm(baseURL+"/gateway.php?cmd=get_account_info&myid="+myid+"&_v=1.80a&_av=4&_t="+token+"&ln=ja", url.Values{
-		"pdata": {string(pdata)},
-	})
+	resp, _ := client.PostForm(baseURL+"/gateway.php?cmd=get_account_info&myid="+myid+"&_v=1.80a&_av=4&_t="+token+"&ln=ja", url.Values{"pdata": {string(pdata)}})
 	defer resp.Body.Close()
 	body, _ := ioutil.ReadAll(resp.Body)
 	result := getAccountInfoResult{}
 	json.Unmarshal(body, &result)
-	for k, v := range result.Result.Accounts {
-		contacts[k] = v
+	for aid, account := range result.Result.Accounts {
+		contacts[aid] = account
 	}
 }
 
@@ -129,10 +127,10 @@ type loadOldChatResult struct {
 type chatList []chat
 
 type chat struct {
-	Aid int
-	Id  int
-	Msg string
-	Tm  int
+	AccountId int `json:"aid"`
+	Id        int
+	Message   string `json:"msg"`
+	Time      int    `json:"tm"`
 }
 
 func (l chatList) Len() int {
@@ -156,37 +154,37 @@ func loadOldChat(roomId, firstChatId int) chatList {
 	return result.Result.ChatList
 }
 
-func GetRoomName(rid int) string {
-	room, _ := rooms[strconv.Itoa(rid)]
-	if len(room.N) != 0 {
-		return room.N
+func GetRoomName(roomId int) string {
+	room, _ := rooms[strconv.Itoa(roomId)]
+	if len(room.Name) != 0 {
+		return room.Name
 	}
-	for _, v := range contacts {
-		if v.Rid == rid {
-			return v.Nm
+	for _, contact := range contacts {
+		if contact.RoomId == roomId {
+			return contact.Name
 		}
 	}
 	return ""
 }
 
-func Export(rid int, file *os.File) {
+func Export(roomId int, file *os.File) {
 	writer := csv.NewWriter(file)
 	firstChatId := 0
 	for {
-		chatList := loadOldChat(rid, firstChatId)
+		chatList := loadOldChat(roomId, firstChatId)
 		sort.Sort(sort.Reverse(chatList))
 		name := ""
-		for _, v := range chatList {
-			name = contacts[strconv.Itoa(v.Aid)].Nm
+		for _, chat := range chatList {
+			name = contacts[strconv.Itoa(chat.AccountId)].Name
 			if len(name) == 0 {
-				name = strconv.Itoa(v.Aid)
+				name = strconv.Itoa(chat.AccountId)
 			}
 			writer.Write([]string{
-				time.Unix(int64(v.Tm), 0).Format("2006-01-02 15:04:05"),
+				time.Unix(int64(chat.Time), 0).Format("2006-01-02 15:04:05"),
 				name,
-				v.Msg,
+				chat.Message,
 			})
-			firstChatId = v.Id
+			firstChatId = chat.Id
 		}
 		writer.Flush()
 		if len(chatList) < 40 {
