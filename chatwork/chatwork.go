@@ -30,7 +30,10 @@ func Login(email, password string) error {
 	form := url.Values{}
 	form.Add("email", email)
 	form.Add("password", password)
-	resp, _ := client.PostForm("https://www.chatwork.com/login.php", form)
+	resp, err := client.PostForm("https://www.chatwork.com/login.php", form)
+	if err != nil {
+		return err
+	}
 	defer resp.Body.Close()
 	body, _ := ioutil.ReadAll(resp.Body)
 	if !regexp.MustCompile(`ACCESS_TOKEN\s+=\s+'[0-9A-Za-z]+'`).Match(body) {
@@ -67,14 +70,18 @@ type contact struct {
 	RoomId    int    `json:"rid"`
 }
 
-func initLoad() {
-	resp, _ := client.Get(baseURL + "/gateway.php?cmd=init_load&myid=" + myid + "&_v=1.80a&_av=4&_t=" + token + "&ln=ja&rid=0&type=&new=1")
+func initLoad() error {
+	resp, err := client.Get(baseURL + "/gateway.php?cmd=init_load&myid=" + myid + "&_v=1.80a&_av=4&_t=" + token + "&ln=ja&rid=0&type=&new=1")
+	if err != nil {
+		return err
+	}
 	defer resp.Body.Close()
 	body, _ := ioutil.ReadAll(resp.Body)
 	result := initLoadResult{}
 	json.Unmarshal(body, &result)
 	rooms = result.Result.Rooms
 	contacts = result.Result.Contacts
+	return nil
 }
 
 type privateData struct {
@@ -88,7 +95,7 @@ type getAccountInfoResult struct {
 	}
 }
 
-func getAccountInfo() {
+func getAccountInfo() error {
 	aidMap := map[int]bool{}
 	for _, room := range rooms {
 		for aidStr, _ := range room.Members {
@@ -108,7 +115,10 @@ func getAccountInfo() {
 		AccountIds:     aidSet,
 		GetPrivateData: 0,
 	})
-	resp, _ := client.PostForm(baseURL+"/gateway.php?cmd=get_account_info&myid="+myid+"&_v=1.80a&_av=4&_t="+token+"&ln=ja", url.Values{"pdata": {string(pdata)}})
+	resp, err := client.PostForm(baseURL+"/gateway.php?cmd=get_account_info&myid="+myid+"&_v=1.80a&_av=4&_t="+token+"&ln=ja", url.Values{"pdata": {string(pdata)}})
+	if err != nil {
+		return err
+	}
 	defer resp.Body.Close()
 	body, _ := ioutil.ReadAll(resp.Body)
 	result := getAccountInfoResult{}
@@ -116,6 +126,7 @@ func getAccountInfo() {
 	for aid, account := range result.Result.Accounts {
 		contacts[aid] = account
 	}
+	return nil
 }
 
 type loadOldChatResult struct {
@@ -145,33 +156,42 @@ func (l chatList) Less(i, j int) bool {
 	return l[i].Id < l[j].Id
 }
 
-func loadOldChat(roomId, firstChatId int) chatList {
-	resp, _ := client.Get(baseURL + "/gateway.php?cmd=load_old_chat&myid=" + myid + "&_v=1.80a&_av=4&_t=" + token + "&ln=ja&room_id=" + strconv.Itoa(roomId) + "&first_chat_id=" + strconv.Itoa(firstChatId))
+func loadOldChat(roomId, firstChatId int) (chatList, error) {
+	resp, err := client.Get(baseURL + "/gateway.php?cmd=load_old_chat&myid=" + myid + "&_v=1.80a&_av=4&_t=" + token + "&ln=ja&room_id=" + strconv.Itoa(roomId) + "&first_chat_id=" + strconv.Itoa(firstChatId))
+	if err != nil {
+		return chatList{}, err
+	}
 	defer resp.Body.Close()
 	body, _ := ioutil.ReadAll(resp.Body)
 	result := loadOldChatResult{}
 	json.Unmarshal(body, &result)
-	return result.Result.ChatList
+	return result.Result.ChatList, nil
 }
 
-func GetRoomName(roomId int) string {
-	room, _ := rooms[strconv.Itoa(roomId)]
+func GetRoomName(roomId int) (string, error) {
+	room, ok := rooms[strconv.Itoa(roomId)]
+	if !ok {
+		return "", fmt.Errorf("you are not a member of the room")
+	}
 	if len(room.Name) != 0 {
-		return room.Name
+		return room.Name, nil
 	}
 	for _, contact := range contacts {
 		if contact.RoomId == roomId {
-			return contact.Name
+			return contact.Name, nil
 		}
 	}
-	return ""
+	return "", fmt.Errorf("no room name")
 }
 
-func Export(roomId int, file *os.File) {
+func Export(roomId int, file *os.File) error {
 	writer := csv.NewWriter(file)
 	firstChatId := 0
 	for {
-		chatList := loadOldChat(roomId, firstChatId)
+		chatList, err := loadOldChat(roomId, firstChatId)
+		if err != nil {
+			return fmt.Errorf("load failed")
+		}
 		sort.Sort(sort.Reverse(chatList))
 		name := ""
 		for _, chat := range chatList {
@@ -191,4 +211,5 @@ func Export(roomId int, file *os.File) {
 			break
 		}
 	}
+	return nil
 }
