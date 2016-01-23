@@ -17,12 +17,12 @@ import (
 )
 
 var (
-	client   http.Client
-	baseURL  string
-	token    string
-	myid     string
-	contacts map[string]contact
-	rooms    map[string]room
+	client      http.Client
+	baseURL     string
+	token       string
+	myid        string
+	contactList map[string]contact
+	roomList    map[string]room
 )
 
 func Login(email, password string) error {
@@ -58,8 +58,8 @@ func Login(email, password string) error {
 
 type initLoadResult struct {
 	Result struct {
-		Rooms    map[string]room    `json:"room_dat"`
-		Contacts map[string]contact `json:"contact_dat"`
+		RoomList    map[string]room    `json:"room_dat"`
+		ContactList map[string]contact `json:"contact_dat"`
 	}
 }
 
@@ -84,8 +84,8 @@ func initLoad() error {
 	body, _ := ioutil.ReadAll(resp.Body)
 	result := initLoadResult{}
 	json.Unmarshal(body, &result)
-	rooms = result.Result.Rooms
-	contacts = result.Result.Contacts
+	roomList = result.Result.RoomList
+	contactList = result.Result.ContactList
 	return nil
 }
 
@@ -103,13 +103,13 @@ type getAccountInfoResult struct {
 // get member's account data that haven't added contact list
 func getAccountInfo() error {
 	aidMap := map[int]bool{}
-	for _, room := range rooms {
+	for _, room := range roomList {
 		for aidStr, _ := range room.Members {
 			aid, _ := strconv.Atoi(aidStr)
 			aidMap[aid] = true
 		}
 	}
-	for _, contact := range contacts {
+	for _, contact := range contactList {
 		delete(aidMap, contact.AccountId)
 	}
 	aidSet := []int{}
@@ -132,7 +132,7 @@ func getAccountInfo() error {
 	result := getAccountInfoResult{}
 	json.Unmarshal(body, &result)
 	for aid, account := range result.Result.Accounts {
-		contacts[aid] = account
+		contactList[aid] = account
 	}
 	return nil
 }
@@ -177,14 +177,14 @@ func loadOldChat(roomId, firstChatId int) (chatList, error) {
 }
 
 func GetRoomName(roomId int) (string, error) {
-	room, ok := rooms[strconv.Itoa(roomId)]
+	room, ok := roomList[strconv.Itoa(roomId)]
 	if !ok {
 		return "", fmt.Errorf("you are not a member of the room(" + strconv.Itoa(roomId) + ")")
 	}
 	if len(room.Name) != 0 {
 		return room.Name, nil
 	}
-	for _, contact := range contacts {
+	for _, contact := range contactList {
 		if contact.RoomId == roomId {
 			return contact.Name, nil
 		}
@@ -203,7 +203,7 @@ func Export(roomId int, file *os.File) error {
 		// order by chat.Id desc
 		sort.Sort(sort.Reverse(chatList))
 		for _, chat := range chatList {
-			name := contacts[strconv.Itoa(chat.AccountId)].Name
+			name := contactList[strconv.Itoa(chat.AccountId)].Name
 			if len(name) == 0 {
 				name = strconv.Itoa(chat.AccountId)
 			}
