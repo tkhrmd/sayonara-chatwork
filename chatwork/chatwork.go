@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -16,8 +17,8 @@ import (
 )
 
 var (
-	baseURL  string
 	client   http.Client
+	baseURL  string
 	token    string
 	myid     string
 	contacts map[string]contact
@@ -41,14 +42,17 @@ func Login(email, password string) error {
 	}
 	token = string(regexp.MustCompile(`ACCESS_TOKEN\s+=\s+'([0-9A-Za-z]+)'`).FindSubmatch(body)[1])
 	myid = string(regexp.MustCompile(`myid\s+=\s+'([0-9]+)'`).FindSubmatch(body)[1])
+	// change the end point by either KDDI ChatWork or ChatWork
 	if regexp.MustCompile(`PLAN_NAME\s+=\s+'KDDI ChatWork'`).Match(body) {
 		baseURL = "https://kcw.kddi.ne.jp"
 		initLoad()
 	} else {
 		baseURL = "https://www.chatwork.com"
 		initLoad()
+		pause()
 		getAccountInfo()
 	}
+	pause()
 	return nil
 }
 
@@ -61,7 +65,7 @@ type initLoadResult struct {
 
 type room struct {
 	Name    string         `json:"n"`
-	Members map[string]int `json:m`
+	Members map[string]int `json:"m"`
 }
 
 type contact struct {
@@ -70,6 +74,7 @@ type contact struct {
 	RoomId    int    `json:"rid"`
 }
 
+// get the chat list and contact list
 func initLoad() error {
 	resp, err := client.Get(baseURL + "/gateway.php?cmd=init_load&myid=" + myid + "&_v=1.80a&_av=4&_t=" + token + "&ln=ja&rid=0&type=&new=1")
 	if err != nil {
@@ -95,6 +100,7 @@ type getAccountInfoResult struct {
 	}
 }
 
+// get member's account data that haven't added contact list
 func getAccountInfo() error {
 	aidMap := map[int]bool{}
 	for _, room := range rooms {
@@ -115,7 +121,9 @@ func getAccountInfo() error {
 		AccountIds:     aidSet,
 		GetPrivateData: 0,
 	})
-	resp, err := client.PostForm(baseURL+"/gateway.php?cmd=get_account_info&myid="+myid+"&_v=1.80a&_av=4&_t="+token+"&ln=ja", url.Values{"pdata": {string(pdata)}})
+	form := url.Values{}
+	form.Add("pdata", string(pdata))
+	resp, err := client.PostForm(baseURL+"/gateway.php?cmd=get_account_info&myid="+myid+"&_v=1.80a&_av=4&_t="+token+"&ln=ja", form)
 	if err != nil {
 		return err
 	}
@@ -138,22 +146,22 @@ type loadOldChatResult struct {
 type chatList []chat
 
 type chat struct {
-	AccountId int `json:"aid"`
-	Id        int
+	AccountId int    `json:"aid"`
+	Id        int    `json:"id"`
 	Message   string `json:"msg"`
 	Time      int    `json:"tm"`
 }
 
-func (l chatList) Len() int {
-	return len(l)
+func (cl chatList) Len() int {
+	return len(cl)
 }
 
-func (l chatList) Swap(i, j int) {
-	l[i], l[j] = l[j], l[i]
+func (cl chatList) Swap(i, j int) {
+	cl[i], cl[j] = cl[j], cl[i]
 }
 
-func (l chatList) Less(i, j int) bool {
-	return l[i].Id < l[j].Id
+func (cl chatList) Less(i, j int) bool {
+	return cl[i].Id < cl[j].Id
 }
 
 func loadOldChat(roomId, firstChatId int) (chatList, error) {
@@ -171,7 +179,7 @@ func loadOldChat(roomId, firstChatId int) (chatList, error) {
 func GetRoomName(roomId int) (string, error) {
 	room, ok := rooms[strconv.Itoa(roomId)]
 	if !ok {
-		return "", fmt.Errorf("you are not a member of the room")
+		return "", fmt.Errorf("you are not a member of the room(" + strconv.Itoa(roomId) + ")")
 	}
 	if len(room.Name) != 0 {
 		return room.Name, nil
@@ -190,16 +198,18 @@ func Export(roomId int, file *os.File) error {
 	for {
 		chatList, err := loadOldChat(roomId, firstChatId)
 		if err != nil {
-			return fmt.Errorf("load failed")
+			return err
 		}
+		// order by chat.Id desc
 		sort.Sort(sort.Reverse(chatList))
-		name := ""
 		for _, chat := range chatList {
-			name = contacts[strconv.Itoa(chat.AccountId)].Name
+			name := contacts[strconv.Itoa(chat.AccountId)].Name
 			if len(name) == 0 {
 				name = strconv.Itoa(chat.AccountId)
 			}
+			// 0123456789,2006-01-02 15:04:05,NAME,MESSAGE
 			writer.Write([]string{
+				strconv.Itoa(chat.Id),
 				time.Unix(int64(chat.Time), 0).Format("2006-01-02 15:04:05"),
 				name,
 				chat.Message,
@@ -210,6 +220,12 @@ func Export(roomId int, file *os.File) error {
 		if len(chatList) < 40 {
 			break
 		}
+		pause()
 	}
 	return nil
+}
+
+func pause() {
+	rand.Seed(time.Now().UnixNano())
+	time.Sleep(time.Duration(rand.Int63n(2000)+1000) * time.Millisecond)
 }

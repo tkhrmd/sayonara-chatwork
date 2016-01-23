@@ -16,7 +16,7 @@ var (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `usage: sayonara-chatwork [option]
+	fmt.Fprintf(os.Stderr, `usage: sayonara-chatwork [options]
 
   -l    login email address
   -p    login password
@@ -30,31 +30,44 @@ func usage() {
 func main() {
 	flag.Usage = usage
 	flag.Parse()
-	fmt.Println(flag.NFlag())
-	if flag.NArg() < 3 {
+	if flag.NFlag() < 3 {
 		flag.Usage()
-		os.Exit(2)
+		os.Exit(1)
 	}
 
 	err := cw.Login(*email, *password)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
-		os.Exit(2)
+		os.Exit(1)
 	}
 
-	workingDir, _ := os.Getwd()
-	logDir := path.Join(workingDir, "chatwork_log")
-	if _, err := os.Stat(logDir); err != nil {
-		if err := os.Mkdir(logDir, 0775); err != nil {
+	roomName, err := cw.GetRoomName(*roomId)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	wd, _ := os.Getwd()
+	dir := path.Join(wd, "chatwork_log")
+	if _, err := os.Stat(dir); err != nil {
+		if err := os.Mkdir(dir, 0775); err != nil {
 			fmt.Fprintf(os.Stderr, err.Error())
-			os.Exit(2)
+			os.Exit(1)
 		}
 	}
 
-	name, _ := cw.GetRoomName(*roomId)
-
-	filePath := path.Join(logDir, strconv.Itoa(*roomId)+"_"+name+".csv")
-	file, _ := os.Create(filePath)
+	fileName := path.Join(dir, strconv.Itoa(*roomId)+"_"+roomName+".csv")
+	file, err := os.Create(fileName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 	defer file.Close()
-	cw.Export(*roomId, file)
+
+	err = cw.Export(*roomId, file)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, err.Error())
+		file.Close()
+		os.Exit(1)
+	}
 }
