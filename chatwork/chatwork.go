@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -48,8 +49,10 @@ func Login(email, password string) error {
 	} else {
 		baseURL = "https://www.chatwork.com"
 		initLoad()
+		pause()
 		getAccountInfo()
 	}
+	pause()
 	return nil
 }
 
@@ -143,8 +146,8 @@ type loadOldChatResult struct {
 type chatList []chat
 
 type chat struct {
-	AccountId int `json:"aid"`
-	Id        int
+	AccountId int    `json:"aid"`
+	Id        int    `json:"id"`
 	Message   string `json:"msg"`
 	Time      int    `json:"tm"`
 }
@@ -217,6 +220,12 @@ func Export(roomId int, file *os.File) error {
 		if len(chatList) < 40 {
 			break
 		}
+		pause()
 	}
 	return nil
+}
+
+func pause() {
+	rand.Seed(time.Now().UnixNano())
+	time.Sleep(time.Duration(rand.Int63n(2000)+1000) * time.Millisecond)
 }

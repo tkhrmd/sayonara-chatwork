@@ -57,8 +57,13 @@ func main() {
 	}
 
 	fileName := path.Join(dir, strconv.Itoa(*roomId)+"_"+roomName+".csv")
-	file, _ := os.Create(fileName)
+	file, err := os.Create(fileName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 	defer file.Close()
+
 	err = cw.Export(*roomId, file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
